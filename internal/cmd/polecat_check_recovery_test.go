@@ -38,6 +38,7 @@ func TestApplyMQCheck(t *testing.T) {
 		finder         mrFinder
 		beadTerminal   bool
 		hasWork        bool
+		mqNotRequired  bool
 		initialVerdict string
 		wantVerdict    string
 		wantMQStatus   string
@@ -61,6 +62,17 @@ func TestApplyMQCheck(t *testing.T) {
 			finder:         fakeMRFinder{issue: nil, err: nil},
 			beadTerminal:   false,
 			hasWork:        false,
+			initialVerdict: "SAFE_TO_NUKE",
+			wantVerdict:    "SAFE_TO_NUKE",
+			wantMQStatus:   "not_required",
+			wantNeedsRecov: false,
+		},
+		{
+			name:           "no merge source with pushed branch work skips MQ submit check",
+			finder:         fakeMRFinder{issue: nil, err: nil},
+			beadTerminal:   false,
+			hasWork:        true,
+			mqNotRequired:  true,
 			initialVerdict: "SAFE_TO_NUKE",
 			wantVerdict:    "SAFE_TO_NUKE",
 			wantMQStatus:   "not_required",
@@ -104,7 +116,7 @@ func TestApplyMQCheck(t *testing.T) {
 				Verdict: tt.initialVerdict,
 				Branch:  "polecat/test",
 			}
-			applyMQCheck(&status, tt.finder, tt.beadTerminal, tt.hasWork)
+			applyMQCheck(&status, tt.finder, tt.beadTerminal, tt.hasWork, tt.mqNotRequired)
 
 			if status.Verdict != tt.wantVerdict {
 				t.Errorf("Verdict = %q, want %q", status.Verdict, tt.wantVerdict)
@@ -114,6 +126,50 @@ func TestApplyMQCheck(t *testing.T) {
 			}
 			if status.NeedsRecovery != tt.wantNeedsRecov {
 				t.Errorf("NeedsRecovery = %v, want %v", status.NeedsRecovery, tt.wantNeedsRecov)
+			}
+		})
+	}
+}
+
+func TestIsMQNotRequiredSource(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue *beads.Issue
+		err   error
+		want  bool
+	}{
+		{
+			name:  "no merge source",
+			issue: &beads.Issue{Description: beads.FormatAttachmentFields(&beads.AttachmentFields{NoMerge: true})},
+			want:  true,
+		},
+		{
+			name:  "review only source",
+			issue: &beads.Issue{Description: beads.FormatAttachmentFields(&beads.AttachmentFields{ReviewOnly: true})},
+			want:  true,
+		},
+		{
+			name:  "local merge strategy source",
+			issue: &beads.Issue{Description: beads.FormatAttachmentFields(&beads.AttachmentFields{MergeStrategy: "local"})},
+			want:  true,
+		},
+		{
+			name:  "normal merge queue source",
+			issue: &beads.Issue{Description: beads.FormatAttachmentFields(&beads.AttachmentFields{MergeStrategy: "mr"})},
+			want:  false,
+		},
+		{
+			name: "missing source is conservative",
+			err:  beads.ErrNotFound,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isMQNotRequiredSource(fakeIssueShower{issue: tt.issue, err: tt.err}, "gt-test")
+			if got != tt.want {
+				t.Errorf("isMQNotRequiredSource() = %v, want %v", got, tt.want)
 			}
 		})
 	}

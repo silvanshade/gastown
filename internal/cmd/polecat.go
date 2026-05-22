@@ -1171,7 +1171,8 @@ func runPolecatCheckRecovery(cmd *cobra.Command, args []string) error {
 		mqBd := beads.New(r.Path)
 		gitState, gitErr := getGitState(p.ClonePath)
 		hasSubmittableWork := hasSubmittableWorkForRecovery(p.ClonePath, gitState, gitErr)
-		applyMQCheck(&status, mqBd, beadTerminal, hasSubmittableWork)
+		mqNotRequired := isMQNotRequiredSource(mqBd, status.Issue)
+		applyMQCheck(&status, mqBd, beadTerminal, hasSubmittableWork, mqNotRequired)
 	}
 
 	// JSON output
@@ -1392,6 +1393,27 @@ func isAssignedBeadTerminal(bd *beads.Beads, issueID string) bool {
 	return beads.IssueStatus(issue.Status).IsTerminal()
 }
 
+// isMQNotRequiredSource reports whether the source bead intentionally bypasses
+// the internal merge queue. The caller still gates this on SAFE_TO_NUKE so dirty
+// or unpushed local work is never hidden by source metadata.
+func isMQNotRequiredSource(bd issueShower, issueID string) bool {
+	if issueID == "" || bd == nil {
+		return false
+	}
+	issue, err := bd.Show(issueID)
+	if err != nil || issue == nil {
+		return false
+	}
+	attachment := beads.ParseAttachmentFields(issue)
+	if attachment == nil {
+		return false
+	}
+	if attachment.NoMerge || attachment.ReviewOnly {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(attachment.MergeStrategy), "local")
+}
+
 // applyMQCheck mutates status based on merge-queue state for the polecat's
 // branch. If beadTerminal is true, the assigned bead is already closed, so
 // there is nothing to submit and we leave the verdict as SAFE_TO_NUKE.
@@ -1399,17 +1421,17 @@ func isAssignedBeadTerminal(bd *beads.Beads, issueID string) bool {
 // This guard fixes the zombie-restart loop documented in bead aa-55d8:
 // a closed "no-op audit" bead (e.g. aa-xtee) used to report NEEDS_MQ_SUBMIT
 // forever, causing witness patrols to restart the polecat on every cycle.
-func applyMQCheck(status *RecoveryStatus, bd mrFinder, beadTerminal, hasSubmittableWork bool) {
-	if beadTerminal {
-		// Nothing to submit — the bead is already terminal.
-		status.MQStatus = "submitted"
-		return
-	}
-	if !hasSubmittableWork {
+func applyMQCheck(status *RecoveryStatus, bd mrFinder, beadTerminal, hasSubmittableWork, mqNotRequired bool) {
+	if !hasSubmittableWork || mqNotRequired {
 		// No commits/content ahead of the integration branch means gt done had
 		// nothing to enqueue; treating that as missing MQ submission causes
 		// recovery loops on no-op/report-only assignments.
 		status.MQStatus = "not_required"
+		return
+	}
+	if beadTerminal {
+		// Work exists, but the bead is already terminal.
+		status.MQStatus = "submitted"
 		return
 	}
 	mr, mrErr := bd.FindMRForBranchAny(status.Branch)
