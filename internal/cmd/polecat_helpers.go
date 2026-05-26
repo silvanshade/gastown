@@ -150,6 +150,9 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 		if fields.ActiveMR != "" {
 			loadGitState()
 			gitSafe := gitErr == nil && gitState != nil && gitState.Clean
+			if !gitSafe && polecatInfo != nil {
+				gitSafe = activeMRGitSafeForWorktree(polecatInfo.ClonePath)
+			}
 			activeMRAssessment = polecat.AssessActiveMR(bd, polecat.ActiveMRInput{ActiveMR: fields.ActiveMR, SourceIssueHint: sourceHint, RequireGitSafe: true, GitSafe: gitSafe})
 		}
 		beadTerminal := isAssignedBeadTerminal(bd, sourceHint)
@@ -166,7 +169,11 @@ func checkPolecatSafety(target polecatTarget) *SafetyCheckResult {
 			if result.CleanupStatus == polecat.CleanupUnpushed {
 				loadGitState()
 			}
-			if staleCleanupStatusCanBeIgnoredForRecovery(result.CleanupStatus, beadTerminal, hookBead, activeMRAssessment.Pending, gitState, gitErr) {
+			gitSafe := gitErr == nil && gitState != nil && gitState.Clean
+			if !gitSafe && polecatInfo != nil {
+				gitSafe = activeMRGitSafeForWorktree(polecatInfo.ClonePath)
+			}
+			if staleCleanupStatusCanBeIgnoredForRecovery(result.CleanupStatus, beadTerminal, hookBead, activeMRAssessment.Pending, gitSafe) {
 				// OK: stale self-report after terminal source and direct clean git.
 			} else {
 				result.Reasons = append(result.Reasons, cleanupStatusBlocker(result.CleanupStatus))
@@ -313,6 +320,9 @@ func displayDryRunSafetyCheck(target polecatTarget) bool {
 			if infoErr == nil && polecatInfo != nil {
 				gitState, gitErr := getGitState(polecatInfo.ClonePath)
 				gitSafe = gitErr == nil && gitState != nil && gitState.Clean
+				if !gitSafe {
+					gitSafe = activeMRGitSafeForWorktree(polecatInfo.ClonePath)
+				}
 			}
 			if blocker := activeMRBlocker(bd, fields.ActiveMR, sourceHint, true, gitSafe); blocker != "" {
 				fmt.Printf("    - Active MR: %s (%s)\n", style.Error.Render("blocked"), blocker)

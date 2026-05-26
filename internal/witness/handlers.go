@@ -172,7 +172,7 @@ func HandlePolecatDone(bd *BdCli, workDir, rigName string, msg *mail.Message, ro
 		return result
 	}
 
-	hasPendingMR := payload.MRID != ""
+	hasPendingMR := completionPayloadHasPendingMR(bd, workDir, rigName, payload)
 
 	// When Exit==COMPLETED but MRID is empty and MR creation didn't explicitly
 	// fail, query beads to check if an MR bead exists for this branch.
@@ -181,7 +181,7 @@ func HandlePolecatDone(bd *BdCli, workDir, rigName string, msg *mail.Message, ro
 	if !hasPendingMR && payload.Exit == "COMPLETED" && !payload.MRFailed && payload.Branch != "" {
 		if mrID := findMRBeadForBranch(bd, workDir, payload.Branch); mrID != "" {
 			payload.MRID = mrID
-			hasPendingMR = true
+			hasPendingMR = completionPayloadHasPendingMR(bd, workDir, rigName, payload)
 		}
 	}
 
@@ -261,13 +261,13 @@ func HandlePolecatDoneFromBead(bd *BdCli, workDir, rigName, polecatName string, 
 		return result
 	}
 
-	hasPendingMR := payload.MRID != ""
+	hasPendingMR := completionPayloadHasPendingMR(bd, workDir, rigName, payload)
 
 	// Same MR-discovery fallback as HandlePolecatDone
 	if !hasPendingMR && payload.Exit == "COMPLETED" && !payload.MRFailed && payload.Branch != "" {
 		if mrID := findMRBeadForBranch(bd, workDir, payload.Branch); mrID != "" {
 			payload.MRID = mrID
-			hasPendingMR = true
+			hasPendingMR = completionPayloadHasPendingMR(bd, workDir, rigName, payload)
 		}
 	}
 
@@ -294,6 +294,19 @@ func HandlePolecatDoneFromBead(bd *BdCli, workDir, rigName, polecatName string, 
 func TransitionPolecatToIdle(workDir, agentBeadID string) error {
 	bd := beads.New(beads.ResolveBeadsDir(workDir))
 	return bd.UpdateAgentState(agentBeadID, string(AgentStateIdle))
+}
+
+func completionPayloadHasPendingMR(bd *BdCli, workDir, rigName string, payload *PolecatDonePayload) bool {
+	if payload == nil || payload.MRID == "" {
+		return false
+	}
+	assessment := polecat.AssessActiveMR(beadCLIShower{bd: bd, workDir: workDir}, polecat.ActiveMRInput{
+		ActiveMR:        payload.MRID,
+		SourceIssueHint: payload.IssueID,
+		RequireGitSafe:  true,
+		GitSafe:         activeMRGitSafe(workDir, rigName, payload.PolecatName),
+	})
+	return assessment.Pending
 }
 
 // handlePolecatDonePendingMR handles a POLECAT_DONE when there's a pending MR.

@@ -252,6 +252,7 @@ func TestCleanupStatusBlockerForRecovery_PartialSpawnWithoutHook(t *testing.T) {
 
 func TestStaleCleanupStatusCanBeIgnoredForRecovery(t *testing.T) {
 	tests := []struct {
+<<<<<<< HEAD
 		name         string
 		status       polecat.CleanupStatus
 		workTerminal bool
@@ -323,12 +324,67 @@ func TestStaleCleanupStatusCanBeIgnoredForRecovery(t *testing.T) {
 			activeMRSafe: true,
 			gitState:     &GitState{Clean: true},
 			wantCanSkip:  true,
+=======
+		name            string
+		status          polecat.CleanupStatus
+		terminal        bool
+		hookBead        string
+		activeMRPending bool
+		gitSafe         bool
+		wantCanSkip     bool
+	}{
+		{
+			name:        "closed source with clean git ignores stale unpushed cleanup",
+			status:      polecat.CleanupUnpushed,
+			terminal:    true,
+			gitSafe:     true,
+			wantCanSkip: true,
+		},
+		{
+			name:    "open source still blocks",
+			status:  polecat.CleanupUnpushed,
+			gitSafe: true,
+		},
+		{
+			name:     "hooked work still blocks",
+			status:   polecat.CleanupUnpushed,
+			terminal: true,
+			hookBead: "gt-work",
+			gitSafe:  true,
+		},
+		{
+			name:            "pending active MR still blocks",
+			status:          polecat.CleanupUnpushed,
+			terminal:        true,
+			activeMRPending: true,
+			gitSafe:         true,
+		},
+		{
+			name:     "dirty git still blocks",
+			status:   polecat.CleanupUnpushed,
+			terminal: true,
+		},
+		{
+			name:     "git error still blocks",
+			status:   polecat.CleanupUnpushed,
+			terminal: true,
+		},
+		{
+			name:     "non-unpushed cleanup still blocks",
+			status:   polecat.CleanupStash,
+			terminal: true,
+			gitSafe:  true,
+>>>>>>> 851624d2 (WIP: checkpoint (auto))
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+<<<<<<< HEAD
 			got := staleCleanupStatusCanBeIgnoredForRecovery(tt.status, tt.workTerminal, tt.hookSafe, tt.activeMRSafe, tt.gitState, tt.gitErr)
+=======
+			got := staleCleanupStatusCanBeIgnoredForRecovery(tt.status, tt.terminal, tt.hookBead, tt.activeMRPending, tt.gitSafe)
+>>>>>>> 851624d2 (WIP: checkpoint (auto))
 			if got != tt.wantCanSkip {
 				t.Fatalf("staleCleanupStatusCanBeIgnoredForRecovery() = %v, want %v", got, tt.wantCanSkip)
 			}
