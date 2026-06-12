@@ -1,16 +1,19 @@
 package beads
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
 
 func TestFormatRigDescription(t *testing.T) {
 	tests := []struct {
-		name   string
+		name    string
 		rigName string
-		fields *RigFields
-		want   []string
+		fields  *RigFields
+		want    []string
 	}{
 		{
 			name:    "nil fields",
@@ -195,6 +198,100 @@ func TestRigBeadIDWithPrefix(t *testing.T) {
 				t.Errorf("RigBeadIDWithPrefix(%q, %q) = %q, want %q", tt.prefix, tt.name, got, tt.want)
 			}
 		})
+	}
+}
+
+func installMockBDCreateRigRecorder(t *testing.T, logPath string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("test uses Unix shell script mock for bd")
+	}
+
+	binDir := t.TempDir()
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$MOCK_BD_LOG"
+
+cmd=""
+for arg in "$@"; do
+  case "$arg" in
+    --*) ;;
+    *) cmd="$arg"; break ;;
+  esac
+done
+
+case "$cmd" in
+  config)
+    if echo "$*" | grep -q "get types.custom"; then
+      echo "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request"
+    fi
+    if echo "$*" | grep -q "get types.infra"; then
+      echo "agent,role,message"
+    fi
+    exit 0
+    ;;
+  create)
+    printf '{"id":"gt-rig-gastown","title":"gastown","status":"open","issue_type":"rig","labels":["gt:rig"],"ephemeral":false}\n'
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+`
+	if err := os.WriteFile(filepath.Join(binDir, "bd"), []byte(script), 0755); err != nil {
+		t.Fatalf("write mock bd: %v", err)
+	}
+
+	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("MOCK_BD_LOG", logPath)
+}
+
+func TestCreateRigBeadUsesDurableRigType(t *testing.T) {
+	workDir := t.TempDir()
+	beadsDir := filepath.Join(workDir, ".beads")
+	if err := os.MkdirAll(filepath.Join(beadsDir, "dolt"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	logPath := filepath.Join(workDir, "bd.log")
+	installMockBDCreateRigRecorder(t, logPath)
+	ResetEnsuredDirs()
+
+	b := NewWithBeadsDir(workDir, beadsDir)
+	issue, err := b.CreateRigBead("gastown", &RigFields{
+		Prefix: "gt",
+		State:  RigStateActive,
+	})
+	if err != nil {
+		t.Fatalf("CreateRigBead: %v", err)
+	}
+	if issue.Type != "rig" {
+		t.Fatalf("issue.Type = %q, want rig", issue.Type)
+	}
+	if !HasLabel(issue, "gt:rig") {
+		t.Fatalf("created rig bead missing gt:rig label: %+v", issue.Labels)
+	}
+	if issue.Ephemeral {
+		t.Fatal("new rig bead should be durable, got ephemeral=true")
+	}
+
+	logData, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read mock bd log: %v", err)
+	}
+	logOutput := string(logData)
+	for _, want := range []string{
+		"config set types.infra agent,role,message",
+		"create --json --id=gt-rig-gastown",
+		"--labels=gt:rig",
+		"--type=rig",
+	} {
+		if !strings.Contains(logOutput, want) {
+			t.Fatalf("mock bd log missing %q:\n%s", want, logOutput)
+		}
+	}
+	if strings.Contains(logOutput, "--type=task") {
+		t.Fatalf("CreateRigBead used task type instead of rig type:\n%s", logOutput)
 	}
 }
 

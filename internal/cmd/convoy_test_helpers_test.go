@@ -46,6 +46,12 @@ type testDAG struct {
 // withRig is a helper for the fluent API to pass rig names to Task().
 func withRig(name string) string { return name }
 
+func typeConfigSentinelForTest() []byte {
+	typesList := strings.Join(constants.BeadsCustomTypesList(), ",")
+	infraTypesList := strings.Join(constants.BeadsInfraTypesList(), ",")
+	return []byte("types.custom=" + typesList + "\ntypes.infra=" + infraTypesList + "\n")
+}
+
 // newTestDAG creates an empty test DAG builder.
 func newTestDAG(t *testing.T) *testDAG {
 	t.Helper()
@@ -383,8 +389,7 @@ func (d *testDAG) Setup(t *testing.T) (townRoot, logPath string) {
 	}
 
 	// Write sentinel files so beads.EnsureCustomTypes/Statuses skip bd calls.
-	typesList := strings.Join(constants.BeadsCustomTypesList(), ",")
-	if err := os.WriteFile(filepath.Join(townRoot, ".beads", ".gt-types-configured"), []byte(typesList+"\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(townRoot, ".beads", ".gt-types-configured"), typeConfigSentinelForTest(), 0644); err != nil {
 		t.Fatalf("write types sentinel: %v", err)
 	}
 	statusesList := strings.Join(constants.BeadsCustomStatusesList(), ",")

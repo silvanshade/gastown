@@ -56,6 +56,9 @@ switch ($cmd) {
     if ($args.Length -ge 3 -and $args[1] -eq 'get' -and $args[2] -eq 'types.custom') {
       Write-Output 'agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request'
     }
+    if ($args.Length -ge 3 -and $args[1] -eq 'get' -and $args[2] -eq 'types.infra') {
+      Write-Output 'agent,role,message'
+    }
     exit 0
   }
   'migrate' { exit 0 }
@@ -96,9 +99,12 @@ case "$cmd" in
     exit 0
     ;;
   config)
-    # Return types list for "config get types.custom" verification
+    # Return types lists for "config get" verification
     if echo "$*" | grep -q "get types.custom"; then
       echo "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request"
+    fi
+    if echo "$*" | grep -q "get types.infra"; then
+      echo "agent,role,message"
     fi
     exit 0
     ;;
@@ -312,10 +318,11 @@ func TestEnsureCustomTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Create sentinel file with current types list
+		// Create sentinel file with current type-related config.
 		currentTypes := strings.Join(constants.BeadsCustomTypesList(), ",")
+		currentInfraTypes := strings.Join(constants.BeadsInfraTypesList(), ",")
 		sentinelPath := filepath.Join(beadsDir, typesSentinel)
-		if err := os.WriteFile(sentinelPath, []byte(currentTypes+"\n"), 0644); err != nil {
+		if err := os.WriteFile(sentinelPath, []byte(typesSentinelValue(currentTypes, currentInfraTypes)+"\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
 
@@ -350,15 +357,45 @@ func TestEnsureCustomTypes(t *testing.T) {
 			t.Fatalf("EnsureCustomTypes: %v", err)
 		}
 
-		if got := strings.TrimSpace(string(mustReadFile(t, sentinelPath))); got != strings.Join(constants.BeadsCustomTypesList(), ",") {
-			t.Fatalf("types sentinel = %q, want current configured types", got)
+		currentTypes := strings.Join(constants.BeadsCustomTypesList(), ",")
+		currentInfraTypes := strings.Join(constants.BeadsInfraTypesList(), ",")
+		if got := strings.TrimSpace(string(mustReadFile(t, sentinelPath))); got != typesSentinelValue(currentTypes, currentInfraTypes) {
+			t.Fatalf("types sentinel = %q, want current configured type config", got)
 		}
 
 		logOutput := readMockBDLog(t, logPath)
-		for _, want := range []string{"init", "config set types.custom"} {
+		for _, want := range []string{"init", "config set types.custom", "config set types.infra agent,role,message", "config get types.infra"} {
 			if !strings.Contains(logOutput, want) {
 				t.Fatalf("mock bd log %q missing %q", logOutput, want)
 			}
+		}
+	})
+
+	t.Run("legacy types-only sentinel triggers infra re-configuration", func(t *testing.T) {
+		logPath := installMockBDRecorder(t)
+		tmpDir := t.TempDir()
+		beadsDir := filepath.Join(tmpDir, ".beads")
+		if err := os.MkdirAll(beadsDir, 0755); err != nil {
+			t.Fatal(err)
+		}
+
+		// Existing sentinels recorded only types.custom. Those must be stale so
+		// existing databases receive the new types.infra value.
+		legacyTypesOnly := strings.Join(constants.BeadsCustomTypesList(), ",")
+		sentinelPath := filepath.Join(beadsDir, typesSentinel)
+		if err := os.WriteFile(sentinelPath, []byte(legacyTypesOnly+"\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+
+		ResetEnsuredDirs()
+
+		if err := EnsureCustomTypes(beadsDir); err != nil {
+			t.Fatalf("EnsureCustomTypes: %v", err)
+		}
+
+		logOutput := readMockBDLog(t, logPath)
+		if !strings.Contains(logOutput, "config set types.infra agent,role,message") {
+			t.Fatalf("legacy sentinel did not trigger types.infra config:\n%s", logOutput)
 		}
 	})
 
@@ -369,10 +406,11 @@ func TestEnsureCustomTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		// Create sentinel with current types to avoid bd call
+		// Create sentinel with current type config to avoid bd call.
 		currentTypes := strings.Join(constants.BeadsCustomTypesList(), ",")
+		currentInfraTypes := strings.Join(constants.BeadsInfraTypesList(), ",")
 		sentinelPath := filepath.Join(beadsDir, typesSentinel)
-		if err := os.WriteFile(sentinelPath, []byte(currentTypes+"\n"), 0644); err != nil {
+		if err := os.WriteFile(sentinelPath, []byte(typesSentinelValue(currentTypes, currentInfraTypes)+"\n"), 0644); err != nil {
 			t.Fatal(err)
 		}
 

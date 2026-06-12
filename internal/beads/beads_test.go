@@ -4154,7 +4154,10 @@ func TestRunEnv_StripsPollutedDoltEnvAndUsesRigMetadata(t *testing.T) {
 		bdAllowStaleMu.Unlock()
 	})
 
-	workDir := t.TempDir()
+	workDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve temp dir: %v", err)
+	}
 	beadsDir := filepath.Join(workDir, ".beads")
 	if err := os.MkdirAll(beadsDir, 0755); err != nil {
 		t.Fatalf("mkdir .beads: %v", err)

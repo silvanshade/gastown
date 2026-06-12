@@ -92,9 +92,9 @@ func ResolveRoutingTarget(townRoot, beadID, fallbackDir string) string {
 //   - In-memory cache for multiple creates in the same CLI invocation
 //   - Sentinel file on disk for persistence across CLI invocations
 //
-// The sentinel file stores the configured types list. When the types list changes
-// (e.g., new types added in a gastown upgrade), the sentinel is detected as stale
-// and types are re-configured automatically (gt-zmy, gt-26f).
+// The sentinel file stores the configured type-related values. When those values
+// change (e.g., new types added in a gastown upgrade), the sentinel is detected
+// as stale and types are re-configured automatically (gt-zmy, gt-26f).
 //
 // This function is thread-safe and idempotent.
 //
@@ -106,6 +106,8 @@ func EnsureCustomTypes(beadsDir string) error {
 	}
 
 	typesList := strings.Join(constants.BeadsCustomTypesList(), ",")
+	infraTypesList := strings.Join(constants.BeadsInfraTypesList(), ",")
+	sentinelValue := typesSentinelValue(typesList, infraTypesList)
 
 	ensuredMu.Lock()
 	defer ensuredMu.Unlock()
@@ -121,7 +123,7 @@ func EnsureCustomTypes(beadsDir string) error {
 	// re-configure. Legacy "v1\n" sentinels also won't match.
 	sentinelPath := filepath.Join(beadsDir, typesSentinel)
 	if data, err := os.ReadFile(sentinelPath); err == nil {
-		if strings.TrimSpace(string(data)) == typesList {
+		if strings.TrimSpace(string(data)) == sentinelValue {
 			ensuredDirs[beadsDir] = true
 			return nil
 		}
@@ -155,6 +157,15 @@ func EnsureCustomTypes(beadsDir string) error {
 			beadsDir, strings.TrimSpace(string(output)), err)
 	}
 
+	infraCmd := exec.Command("bd", "config", "set", "types.infra", infraTypesList)
+	infraCmd.Dir = beadsDir
+	util.SetDetachedProcessGroup(infraCmd)
+	infraCmd.Env = bdEnv
+	if output, err := infraCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("configure infra types in %s: %s: %w",
+			beadsDir, strings.TrimSpace(string(output)), err)
+	}
+
 	// Verify the config was actually persisted in the database (GH#2637).
 	// bd config set can exit 0 but fail to write if it targets the wrong
 	// database (redirect mismatch, stale metadata, server not running).
@@ -169,13 +180,26 @@ func EnsureCustomTypes(beadsDir string) error {
 			beadsDir, strings.TrimSpace(string(verifyOutput)))
 	}
 
-	// Write sentinel file with the types list for staleness detection.
-	// On next invocation, if types have changed, the sentinel won't match
+	infraVerifyCmd := exec.Command("bd", "config", "get", "types.infra")
+	infraVerifyCmd.Dir = beadsDir
+	infraVerifyCmd.Env = bdEnv
+	util.SetDetachedProcessGroup(infraVerifyCmd)
+	if verifyOutput, err := infraVerifyCmd.Output(); err != nil || ParseConfigOutput(verifyOutput) != infraTypesList {
+		return fmt.Errorf("types.infra not persisted in %s after bd config set (verify returned %q): db may be misconfigured",
+			beadsDir, strings.TrimSpace(string(verifyOutput)))
+	}
+
+	// Write sentinel file with the type config for staleness detection.
+	// On next invocation, if type config has changed, the sentinel won't match
 	// and we'll re-configure automatically.
-	_ = os.WriteFile(sentinelPath, []byte(typesList+"\n"), 0644)
+	_ = os.WriteFile(sentinelPath, []byte(sentinelValue+"\n"), 0644)
 
 	ensuredDirs[beadsDir] = true
 	return nil
+}
+
+func typesSentinelValue(customTypes, infraTypes string) string {
+	return "types.custom=" + customTypes + "\ntypes.infra=" + infraTypes
 }
 
 // EnsureCustomStatuses ensures the target beads directory has custom statuses configured.

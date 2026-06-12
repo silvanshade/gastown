@@ -22,6 +22,12 @@ import (
 	"github.com/steveyegge/gastown/internal/tmux"
 )
 
+func typeConfigSentinelForTest() []byte {
+	typesList := strings.Join(constants.BeadsCustomTypesList(), ",")
+	infraTypesList := strings.Join(constants.BeadsInfraTypesList(), ",")
+	return []byte("types.custom=" + typesList + "\ntypes.infra=" + infraTypesList + "\n")
+}
+
 func TestDetectTownRoot(t *testing.T) {
 	// Unset GT_TOWN_ROOT/GT_ROOT so tests exercise workspace.Find fallback.
 	// (The real session always has these set; this tests the detection logic itself.)
@@ -374,8 +380,7 @@ func TestSendFromCrewWorkspace_AvoidsEphemeralPrefixMismatch(t *testing.T) {
 	}
 
 	// Write sentinel files so beads.EnsureCustomTypes skips bd config calls.
-	typesList := strings.Join(constants.BeadsCustomTypesList(), ",")
-	if err := os.WriteFile(filepath.Join(townBeadsDir, ".gt-types-configured"), []byte(typesList+"\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(townBeadsDir, ".gt-types-configured"), typeConfigSentinelForTest(), 0644); err != nil {
 		t.Fatalf("write types sentinel: %v", err)
 	}
 

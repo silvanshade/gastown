@@ -228,8 +228,7 @@ func TestConvoyCreate_UsesTrackingHelper(t *testing.T) {
 	// Write sentinel files to skip EnsureCustomTypes/Statuses (they call bd
 	// config set/get which isn't relevant to routing).
 	beadsDir := filepath.Join(townRoot, ".beads")
-	typesList := "agent,role,rig,convoy,slot,queue,event,message,molecule,gate,merge-request"
-	_ = os.WriteFile(filepath.Join(beadsDir, ".gt-types-configured"), []byte(typesList), 0644)
+	_ = os.WriteFile(filepath.Join(beadsDir, ".gt-types-configured"), typeConfigSentinelForTest(), 0644)
 	_ = os.WriteFile(filepath.Join(beadsDir, ".gt-statuses-configured"), []byte("staged_ready,staged_warnings"), 0644)
 
 	var helperTownRoot, helperConvoyID, helperIssueID string
