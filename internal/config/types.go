@@ -840,8 +840,7 @@ func DefaultRuntimeConfig() *RuntimeConfig {
 // BuildCommand returns the full command line string.
 // For use with tmux SendKeys and respawn-pane, where the string is
 // interpreted by the user's shell. Args containing shell-special
-// characters (e.g., brackets in "sonnet[1m]") are quoted to prevent
-// glob expansion.
+// characters are quoted to prevent glob expansion.
 func (rc *RuntimeConfig) BuildCommand() string {
 	resolved := normalizeRuntimeConfig(rc)
 
