@@ -4,8 +4,7 @@ description = "Context-aware stuck/crashed agent detection and restart for polec
 version = 1
 
 [gate]
-type = "cooldown"
-duration = "5m"
+type = "manual"
 
 [tracking]
 labels = ["plugin:stuck-agent-dog", "category:health"]

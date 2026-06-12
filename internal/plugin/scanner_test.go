@@ -414,6 +414,9 @@ func TestParsePluginMD_StuckAgentDogUsesCanonicalHeartbeatPath(t *testing.T) {
 	if plugin.Name != "stuck-agent-dog" {
 		t.Fatalf("expected name 'stuck-agent-dog', got %q", plugin.Name)
 	}
+	if plugin.Gate == nil || plugin.Gate.Type != GateManual {
+		t.Fatalf("expected stuck-agent-dog to be manually gated, got %#v", plugin.Gate)
+	}
 	if !strings.Contains(plugin.Instructions, "deacon/heartbeat.json") {
 		t.Fatalf("expected canonical heartbeat path in instructions, got:\n%s", plugin.Instructions)
 	}

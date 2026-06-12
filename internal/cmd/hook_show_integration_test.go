@@ -107,3 +107,66 @@ func TestHookShowShorthandResolvesToCanonical(t *testing.T) {
 			active.BeadID, active.Status, issue.ID)
 	}
 }
+
+func TestHookShowExplicitRigTargetUsesRigRootBeadsDir(t *testing.T) {
+	if _, err := exec.LookPath("bd"); err != nil {
+		t.Skip("bd not installed, skipping integration test")
+	}
+
+	townRoot, polecatDir, rigPrefix := setupHookTestTown(t)
+
+	// setupHookTestTown creates gastown/mayor/rig/.beads as a stale directory
+	// with config only. The live database for this regression lives at the rig root.
+	rigRoot := filepath.Join(townRoot, "gastown")
+	initBeadsDBWithPrefix(t, rigRoot, rigPrefix)
+
+	b := beads.New(rigRoot)
+	issue, err := b.Create(beads.CreateOptions{
+		Title:    "Hook show rig-root beads regression test",
+		Type:     "task",
+		Priority: 2,
+	})
+	if err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+
+	hooked := beads.StatusHooked
+	assignee := "gastown/polecats/toast"
+	if err := b.Update(issue.ID, beads.UpdateOptions{
+		Status:   &hooked,
+		Assignee: &assignee,
+	}); err != nil {
+		t.Fatalf("hook issue: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(polecatDir); err != nil {
+		t.Fatalf("chdir to polecat dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	prevJSON := moleculeJSON
+	moleculeJSON = true
+	t.Cleanup(func() {
+		moleculeJSON = prevJSON
+	})
+
+	out := captureStdout(t, func() {
+		if err := runHookShow(nil, []string{"gastown/polecats/toast"}); err != nil {
+			t.Fatalf("runHookShow explicit target: %v", err)
+		}
+	})
+	var parsed hookShowJSON
+	if err := json.Unmarshal([]byte(out), &parsed); err != nil {
+		t.Fatalf("parse runHookShow output %q: %v", out, err)
+	}
+	if parsed.BeadID != issue.ID || parsed.Status != beads.StatusHooked {
+		t.Fatalf("rig-root target mismatch: got bead=%q status=%q, want bead=%q status=%q",
+			parsed.BeadID, parsed.Status, issue.ID, beads.StatusHooked)
+	}
+}
